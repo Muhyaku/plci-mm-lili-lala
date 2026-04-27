@@ -16,6 +16,7 @@ const SETTINGS_URL = "https://backend-mm-v2.vercel.app/api/settings";
 const ACTIVITY_URL = "https://backend-mm-v2.vercel.app/api/activities"; 
 const MENU_MASTER_URL = "https://backend-mm-v2.vercel.app/api/menu"; // <-- TAMBAHIN INI
 const PROGRESS_URL = "https://backend-mm-v2.vercel.app/api/progress";
+const MODAL_SENEN_URL = "https://backend-mm-v2.vercel.app/api/modal-senen"; // Ganti ke URL backend lu
 
 
 const BRANCH_CONFIG = {
@@ -23,7 +24,8 @@ const BRANCH_CONFIG = {
   '6060': { id: 'mm2', name: 'Mutiara Minang - Villa MG', brand: 'minang', sheetName: 'MM Villa MG', bg: 'bg-red-50', color: 'text-red-600' },
   '3030': { id: 'mm3', name: 'Mutiara Minang - Sinpasa', brand: 'minang', sheetName: 'MM Sinpasa', bg: 'bg-red-50', color: 'text-red-600' },
   '1010': { id: 'plci1', name: 'Pecel Lele Cabe Ijo - Kantin SMB', brand: 'pecel', sheetName: 'PLCI Kantin SMB', bg: 'bg-green-50', color: 'text-green-600' },
-  '1234': { id: 'pusat', name: 'Testing Pusat', brand: 'pecel', sheetName: 'Testing Pusat', bg: 'bg-green-50', color: 'text-green-600' }
+  '1234': { id: 'pusat', name: 'Testing Pusat', brand: 'pecel', sheetName: 'Testing Pusat', bg: 'bg-green-50', color: 'text-green-600' },
+  '8080': { id: 'senen', name: 'Mutiara Minang - Pasar Senen', brand: 'minang', sheetName: 'MM Pasar Senen', bg: 'bg-blue-50', color: 'text-blue-600', isInputMode: true } // <-- INI BARU
 };
 
 // Konfigurasi PIN khusus akses Dapur masing-masing cabang
@@ -151,13 +153,20 @@ const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'curren
   if (!userRole) return <SmartLoginView onLogin={handleLogin} appSettings={appSettings} onPreFetchSettings={async () => { try { const res = await fetch(SETTINGS_URL); setAppSettings(await res.json()); } catch(e){} }} branches={Object.values(BRANCH_CONFIG)} />;
   
   if (userRole === 'master_menu') return <MasterMenuView onNavigate={(view) => setUserRole(view)} onLogout={() => setUserRole(null)} />;
-  if (userRole === 'central_expense') return <CentralExpenseView onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
-  if (userRole === 'shared_expense') return <SharedExpenseView onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
-  if (userRole === 'kitchen') return <KitchenView branchInfo={activeBranch} onLogout={() => setUserRole(null)} />;
-  if (userRole === 'employee') return <EmployeePOSView branchInfo={activeBranch} rawData={rawData} onLogout={() => setUserRole(null)} refreshData={fetchData} isFetching={isFetching} formatRupiah={formatRupiah} onDelete={handleDelete} onPrintCount={handlePrintCount} />;
+    if (userRole === 'central_expense') return <CentralExpenseView onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
+    if (userRole === 'shared_expense') return <SharedExpenseView onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
+    if (userRole === 'kitchen') return <KitchenView branchInfo={activeBranch} onLogout={() => setUserRole(null)} />;
+    
+    // LOGIKA EMPLOYEE YANG BENAR (GABUNGAN KASIR BIASA & PASAR SENEN)
+    if (userRole === 'employee') {
+      if (activeBranch?.isInputMode) {
+        return <PasarSenenInputView branchInfo={activeBranch} onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
+      }
+      return <EmployeePOSView branchInfo={activeBranch} rawData={rawData} onLogout={() => setUserRole(null)} refreshData={fetchData} isFetching={isFetching} formatRupiah={formatRupiah} onDelete={handleDelete} onPrintCount={handlePrintCount} />;
+    }
 
-  return <AdminDashboardView rawData={rawData} isFetching={isFetching} formatRupiah={formatRupiah} onLogout={() => setUserRole(null)} refreshData={fetchData} onDelete={handleDelete} onBulkDelete={handleBulkDelete} branches={Object.values(BRANCH_CONFIG)} appSettings={appSettings} />;
-}
+    return <AdminDashboardView rawData={rawData} isFetching={isFetching} formatRupiah={formatRupiah} onLogout={() => setUserRole(null)} refreshData={fetchData} onDelete={handleDelete} onBulkDelete={handleBulkDelete} branches={Object.values(BRANCH_CONFIG)} appSettings={appSettings} />;
+  }
 
 // ==========================================
 // 1. GERBANG LOGIN PINTAR (SUPER STEALTH + HACKED MODE)
@@ -3582,11 +3591,14 @@ function AdminDashboardView({ rawData, isFetching, formatRupiah, onLogout, refre
     };
   }, [emergencyAlerts.length]);
   
-  const filteredRawData = useMemo(() => {
-     // Sembunyikan data dapur dari Admin Besar biar laporan Rp 0 gak menu-menuhin
+const filteredRawData = useMemo(() => {
+     // Sembunyikan data dapur dari Admin Besar
      let data = rawData.filter(item => !(item.jenisPengeluaran && item.jenisPengeluaran.includes('[UNPAID]')));
      
-     if (filterCabang === 'Semua') return data;
+     if (filterCabang === 'Semua') {
+         // KUNCI: Sembunyikan Pasar Senen dari view Global
+         return data.filter(item => item.sheet !== 'MM Pasar Senen');
+     }
      return data.filter(item => item.sheet === filterCabang);
   }, [rawData, filterCabang]);
 
@@ -4299,11 +4311,14 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
 
   const activeDayData = selectedDate ? dailyGroups.find(d => d.tanggal === selectedDate) : null;
 
-  const exportDailyPDF = () => {
+const exportDailyPDF = () => {
     if (!activeDayData) return;
     const doc = new jsPDF();
     doc.setFontSize(16); doc.setFont("helvetica", "bold");
-    doc.text(`Laporan Harian: ${tabType.toUpperCase()}`, 14, 20);
+    
+    // CUSTOM TITLE KHUSUS PASAR SENEN
+    const titleStr = filterCabang === 'MM Pasar Senen' ? 'Laporan Harian: REKAP SETORAN STOK' : `Laporan Harian: ${tabType.toUpperCase()}`;
+    doc.text(titleStr, 14, 20);
     
     doc.setFontSize(10); doc.setFont("helvetica", "normal");
     doc.text(`Tanggal: ${activeDayData.tanggal}`, 14, 28);
@@ -4311,46 +4326,106 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
     doc.text(`Total Keseluruhan: ${formatRupiah(activeDayData.total)}`, 14, 40);
     
     doc.setFontSize(9);
-    doc.text(`Detail -> CASH: ${formatRupiah(activeDayData.cash)}   |   BCA: ${formatRupiah(activeDayData.bca)}   |   QRIS: ${formatRupiah(activeDayData.qris)}`, 14, 46);
+    // Sembunyikan detail metode pembayaran (Cash/BCA/QRIS) jika di Pasar Senen karena cuma 1 metode (Setoran)
+    if (filterCabang !== 'MM Pasar Senen') {
+        doc.text(`Detail -> CASH: ${formatRupiah(activeDayData.cash)}   |   BCA: ${formatRupiah(activeDayData.bca)}   |   QRIS: ${formatRupiah(activeDayData.qris)}`, 14, 46);
+    }
 
-    const tableColumn = tabType === 'penjualan' 
-      ? ["Waktu", "Status", "Keterangan", "Cetak", "Metode", "Total"] 
-      : ["Waktu", "Status", "Jenis Pengeluaran", "Metode", "Total Keluar", "Catatan"];
+    let tableColumn = [];
     const tableRows = [];
 
-    activeDayData.items.forEach(item => {
-      const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
-      const statusStr = item.isDeleted ? 'DIHAPUS' : 'OK';
-      const rowStyles = item.isDeleted ? { textColor: [220, 38, 38], fontStyle: 'italic' } : {}; 
-      
-      if (tabType === 'penjualan') {
-        const income = (item.cash||0) + (item.bca||0) + (item.gofood||0);
-        let metode = '-';
-        if (item.cash > 0) metode = 'CASH'; else if (item.bca > 0) metode = 'BCA'; else if (item.gofood > 0) metode = 'QRIS';
+    // ===============================================
+    // LOGIKA PDF KHUSUS CABANG PASAR SENEN
+    // ===============================================
+    if (filterCabang === 'MM Pasar Senen') {
+        tableColumn = ["Waktu", "Nama Item", "Stok Awal", "Sisa Stok", "Laku", "Hrg Modal", "Total (Rp)"];
         
-        // HAPUS BINTANG BINTANG DI PDF
-        const rawItemsStr = (item.jenisPengeluaran || '').split('] ')[1] || '';
-        const cleanItemsPdf = rawItemsStr.split(', ').filter(p => !p.startsWith('**') && !p.startsWith('++')).join(', ');
+        activeDayData.items.forEach(item => {
+            const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+            const rowStyles = item.isDeleted ? { textColor: [220, 38, 38], fontStyle: 'italic' } : {};
+            
+            const rawItemsStr = (item.jenisPengeluaran || '').replace('[LAPORAN SENEN]', '').trim();
+            const detailItems = rawItemsStr.split(' || ').filter(i => i);
+            
+            if (detailItems.length === 0) {
+                tableRows.push([
+                    {content: timeStr, styles: rowStyles}, 
+                    {content: item.isDeleted ? 'LAPORAN DIHAPUS' : 'DATA KOSONG', styles: rowStyles}, 
+                    '-', '-', '-', '-', '-'
+                ]);
+                return;
+            }
 
-        tableRows.push([ 
-            {content: timeStr, styles: rowStyles}, {content: statusStr, styles: rowStyles}, {content: cleanItemsPdf || 'Penjualan Kasir', styles: rowStyles},
-            {content: `${item.printCount||0}x`, styles: rowStyles}, {content: metode, styles: rowStyles}, {content: formatRupiah(income), styles: rowStyles}
-        ]);
-      } else {
+            // Loop per item buat dijadiin baris tabel yang rapi
+            detailItems.forEach((line, index) => {
+               const splitColon = line.split(': ');
+               if (splitColon.length < 2) return;
+               const name = splitColon[0];
+               const statsStr = splitColon[1];
+               
+               // Parsing data dari string laporan
+               const awal = statsStr.match(/Awal (\d+)/)?.[1] || '0';
+               const sisa = statsStr.match(/Sisa (\d+)/)?.[1] || '0';
+               const laku = statsStr.match(/Laku (\d+)/)?.[1] || '0';
+               const modalRaw = statsStr.match(/Modal (Rp.*?)$/)?.[1] || 'Rp 0';
+               
+               // Hitung total uangnya
+               const modalNum = parseInt(modalRaw.replace(/\D/g, '')) || 0;
+               const lakuNum = parseInt(laku) || 0;
+               const totalItem = formatRupiah(modalNum * lakuNum);
 
-        let cleanJenis = (item.jenisPengeluaran || '').split('| NOTE: ')[0].replace(/#GRP\d+#/g, '').trim();
-        let note = item.jenisPengeluaran?.split('| NOTE: ')[1]?.trim() || '-';
-        let metode = '-';
-        if (cleanJenis.includes('[CASH]')) { metode = 'CASH'; cleanJenis = cleanJenis.replace('[CASH]', '').trim(); }
-        else if (cleanJenis.includes('[BCA]')) { metode = 'BCA'; cleanJenis = cleanJenis.replace('[BCA]', '').trim(); }
-        else if (cleanJenis.includes('[QRIS]')) { metode = 'QRIS'; cleanJenis = cleanJenis.replace('[QRIS]', '').trim(); }
-        
-        tableRows.push([ 
-            {content: timeStr, styles: rowStyles}, {content: statusStr, styles: rowStyles}, {content: cleanJenis, styles: rowStyles}, 
-            {content: metode, styles: rowStyles}, {content: formatRupiah(item.totalPengeluaran), styles: rowStyles}, {content: note, styles: rowStyles}
-        ]);
-      }
-    });
+               tableRows.push([
+                  {content: index === 0 ? timeStr : '', styles: rowStyles}, // Waktu cuma muncul di baris pertama
+                  {content: name, styles: rowStyles},
+                  {content: awal, styles: rowStyles},
+                  {content: sisa, styles: rowStyles},
+                  {content: laku, styles: rowStyles},
+                  {content: modalRaw, styles: rowStyles},
+                  {content: totalItem, styles: rowStyles}
+               ]);
+            });
+        });
+    } 
+    // ===============================================
+    // LOGIKA PDF UNTUK CABANG LAIN (NORMAL)
+    // ===============================================
+    else {
+        tableColumn = tabType === 'penjualan' 
+          ? ["Waktu", "Status", "Keterangan", "Cetak", "Metode", "Total"] 
+          : ["Waktu", "Status", "Jenis Pengeluaran", "Metode", "Total Keluar", "Catatan"];
+          
+        activeDayData.items.forEach(item => {
+          const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+          const statusStr = item.isDeleted ? 'DIHAPUS' : 'OK';
+          const rowStyles = item.isDeleted ? { textColor: [220, 38, 38], fontStyle: 'italic' } : {}; 
+          
+          if (tabType === 'penjualan') {
+            const income = (item.cash||0) + (item.bca||0) + (item.gofood||0);
+            let metode = '-';
+            if (item.cash > 0) metode = 'CASH'; else if (item.bca > 0) metode = 'BCA'; else if (item.gofood > 0) metode = 'QRIS';
+            
+            const rawItemsStr = (item.jenisPengeluaran || '').split('] ')[1] || '';
+            const cleanItemsPdf = rawItemsStr.split(', ').filter(p => !p.startsWith('**') && !p.startsWith('++')).join(', ');
+
+            tableRows.push([ 
+                {content: timeStr, styles: rowStyles}, {content: statusStr, styles: rowStyles}, {content: cleanItemsPdf || 'Penjualan Kasir', styles: rowStyles},
+                {content: `${item.printCount||0}x`, styles: rowStyles}, {content: metode, styles: rowStyles}, {content: formatRupiah(income), styles: rowStyles}
+            ]);
+          } else {
+            let cleanJenis = (item.jenisPengeluaran || '').split('| NOTE: ')[0].replace(/#GRP\d+#/g, '').trim();
+            let note = item.jenisPengeluaran?.split('| NOTE: ')[1]?.trim() || '-';
+            let metode = '-';
+            if (cleanJenis.includes('[CASH]')) { metode = 'CASH'; cleanJenis = cleanJenis.replace('[CASH]', '').trim(); }
+            else if (cleanJenis.includes('[BCA]')) { metode = 'BCA'; cleanJenis = cleanJenis.replace('[BCA]', '').trim(); }
+            else if (cleanJenis.includes('[QRIS]')) { metode = 'QRIS'; cleanJenis = cleanJenis.replace('[QRIS]', '').trim(); }
+            
+            tableRows.push([ 
+                {content: timeStr, styles: rowStyles}, {content: statusStr, styles: rowStyles}, {content: cleanJenis, styles: rowStyles}, 
+                {content: metode, styles: rowStyles}, {content: formatRupiah(item.totalPengeluaran), styles: rowStyles}, {content: note, styles: rowStyles}
+            ]);
+          }
+        });
+    }
 
     autoTable(doc, { head: [tableColumn], body: tableRows, startY: 52, theme: 'grid', headStyles: { fillColor: [17, 24, 39] } });
     doc.save(`Laporan_${tabType}_Harian_${activeDayData.tanggal.replace(/,/g, '')}_${filterCabang}.pdf`);
@@ -4475,7 +4550,6 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
               </div>
               <div className="px-4 py-2 bg-gray-100 rounded-xl text-sm font-black text-gray-900 border border-gray-200">Total: <span className={tabType === 'penjualan' ? 'text-green-600' : 'text-red-600'}>{formatRupiah(activeDayData.total)}</span></div>
               
-              {/* TOMBOL PROGRESS HARIAN BARU DI SINI */}
               {tabType === 'penjualan' && (
                   <button onClick={() => window.dispatchEvent(new CustomEvent('openProgressModal', { detail: activeDayData.tanggal }))} className="px-4 py-3 bg-blue-600 text-white rounded-xl shadow-sm font-bold text-sm flex items-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
                       <Activity size={16}/> Progress Item
@@ -4489,13 +4563,15 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
 
       <div className="overflow-x-auto flex-1 bg-white relative pb-24">
         <table className="w-full text-left border-collapse whitespace-nowrap min-w-[800px]">
+
           <thead className="sticky top-0 z-20">
             <tr className="bg-gray-50 text-xs text-gray-400 uppercase tracking-widest border-b border-gray-200 shadow-sm">
-              
               {/* CHECKBOX HEADER */}
               {isMultiDeleteActive && (
                   <th className="p-5 font-bold w-12 text-center bg-gray-50">
-                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer" 
+                      <input 
+                         type="checkbox" 
+                         className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer"
                          checked={activeDayData.items.length > 0 && selectedIds.length === activeDayData.items.length}
                          onChange={(e) => {
                              if(e.target.checked) setSelectedIds(activeDayData.items.map(i=>i._id));
@@ -4507,22 +4583,30 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
 
               <th className="p-5 font-bold">Waktu</th>
               <th className="p-5 font-bold">Status</th>
-              {tabType === 'penjualan' ? ( 
+              
+              {/* KONDISI TABEL HEADER BERDASARKAN CABANG */}
+              {filterCabang === 'MM Pasar Senen' ? (
+                <>
+                  <th className="p-5 font-bold w-full">Detail Rekap Laporan Stok</th>
+                  <th className={`p-5 font-bold text-center ${pinClassesActionAndTotal}`}>Total Setoran & Aksi</th>
+                </>
+              ) : tabType === 'penjualan' ? ( 
                 <>
                   <th className="p-5 font-bold w-full">Keterangan Belanja</th>
                   <th className="p-5 font-bold text-center">Cetak</th>
                   <th className="p-5 font-bold text-center">Metode</th>
                   <th className={`p-5 font-bold text-center ${pinClassesActionAndTotal}`}>Total & Aksi</th>
-                </ > 
+                </> 
               ) : ( 
                 <>
                   <th className="p-5 font-bold w-full">Jenis Pengeluaran</th>
                   <th className="p-5 font-bold text-center">Metode</th>
                   <th className={`p-5 font-bold text-center ${pinClassesActionAndTotal}`}>Keluar & Aksi</th>
-                </ > 
+                </> 
               )}
             </tr>
           </thead>
+
           <tbody className="text-sm">
             {activeDayData.items.map((item, idx) => {
               const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
@@ -4531,7 +4615,57 @@ function AdminMonthDetailView({ monthData, tabType, onBack, formatRupiah, onDele
               const rowClass = isSelected ? "bg-orange-50 hover:bg-orange-100 border-b border-orange-200" : (isDeleted ? "bg-red-50/50 hover:bg-red-50 border-b border-red-100" : "border-b border-gray-50 hover:bg-gray-50");
               const textClass = isDeleted ? "text-red-500 line-through opacity-70" : "text-gray-600";
               
-              if (tabType === 'penjualan') {
+              // KONDISI TABEL BODY KHUSUS PASAR SENEN
+              if (filterCabang === 'MM Pasar Senen') {
+                 const rawItemsStr = (item.jenisPengeluaran || '').replace('[LAPORAN SENEN]', '').trim();
+                 const detailItems = rawItemsStr.split(' || ').filter(i => i);
+                 
+                 return (
+                    <tr key={item._id || idx} className={`${rowClass} transition-colors`}>
+                        {isMultiDeleteActive && (
+                            <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                                <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-orange-500 cursor-pointer" 
+                                    checked={isSelected}
+                                    onChange={() => setSelectedIds(prev => prev.includes(item._id) ? prev.filter(id => id !== item._id) : [...prev, item._id])}
+                                />
+                            </td>
+                        )}
+                        <td className="p-5 font-black text-gray-400">
+                           {timeStr}
+                           {isDeleted && item.deletedAt && <div className="text-[9px] text-red-400 font-normal mt-1">Dihapus: {new Date(item.deletedAt).toLocaleTimeString('id-ID')}</div>}
+                        </td>
+                        <td className="p-5">
+                           {isDeleted ? <span className="px-2 py-1 bg-red-100 text-red-600 text-[10px] font-black rounded border border-red-200 uppercase">Terhapus</span> : <CheckCircle2 size={16} className="text-green-500"/>}
+                        </td>
+                        <td className={`p-5 font-bold ${textClass} whitespace-normal break-words min-w-[400px]`}>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                               {detailItems.map((line, i) => {
+                                   const [name, stats] = line.split(': ');
+                                   return (
+                                       <div key={i} className={`p-3 rounded-xl border flex flex-col gap-1 shadow-sm ${isDeleted ? 'bg-red-50/50 border-red-100' : 'bg-blue-50/50 border-blue-100'}`}>
+                                           <span className={`font-black text-xs ${isDeleted ? 'text-red-500' : 'text-blue-900'}`}>{name}</span>
+                                           <span className={`text-[10px] font-bold ${isDeleted ? 'text-red-400' : 'text-blue-600'}`}>{stats}</span>
+                                       </div>
+                                   );
+                               })}
+                           </div>
+                        </td>
+                        <td className={`p-5 text-center flex flex-col items-center justify-center gap-3 h-full min-h-[100px] ${pinClassesActionAndTotal} ${isSelected ? 'bg-orange-50' : 'bg-white'}`}>
+                          <span className={`font-black text-xl ${isDeleted ? 'text-red-500 opacity-70' : 'text-green-700'}`}>{formatRupiah(item.cash)}</span>
+                          
+                          {isDeleted ? (
+                             <div className="flex flex-col gap-1 items-center">
+                                <span className="text-[10px] font-bold text-red-500 bg-red-100 px-2 py-0.5 rounded">SAMPAH</span>
+                                <button onClick={(e) => { e.stopPropagation(); handleHardDelete(item._id, true); }} className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] rounded-md font-bold transition-colors shadow-sm">Permanen</button>
+                             </div>
+                          ) : isDeletingId === item._id ? ( <Loader2 size={16} className="animate-spin text-red-500 mx-auto" /> ) : ( <button onClick={(e) => { e.stopPropagation(); handleHardDelete(item._id, false); }} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all z-10"><Trash2 size={18} className="mx-auto"/></button> )}
+                        </td>
+                    </tr>
+                 );
+              } 
+              
+              // DI BAWAH SINI ADALAH LOGIKA TABEL ASLI UNTUK CABANG LAIN
+              else if (tabType === 'penjualan') {
                 const income = (item.cash||0) + (item.bca||0) + (item.gofood||0);
                 let metode = '-'; let badgeColor = isDeleted ? 'bg-red-100 text-red-500 border-red-200' : 'bg-gray-100 text-gray-500 border-gray-200';
                 if (!isDeleted) {
@@ -5757,4 +5891,297 @@ function AdminItemProgressView({ rawData, branchInfo, onBack, formatRupiah, targ
             )}
         </div>
     );
+}
+
+function PasarSenenInputView({ branchInfo, onLogout, formatRupiah }) {
+  const [step, setStep] = useState(1);
+  const [items, setItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // KEY UNTUK LOCAL STORAGE (Spesifik per cabang biar gak bentrok)
+  const DRAFT_KEY = `draft_senen_${branchInfo.id}`;
+
+  // 1. INITIALIZATION & AMBIL DATA (CEK LOCAL STORAGE DULU)
+  useEffect(() => {
+    const fetchModalPrices = async () => {
+      try {
+        const todayStr = new Date().toLocaleDateString('id-ID');
+        
+        // CEK DRAFT DI HP/TABLET KASIR
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (savedDraft) {
+            const draftParsed = JSON.parse(savedDraft);
+            // Validasi: Pastikan draft ini adalah draft hari ini. Kalau hari beda, buang!
+            if (draftParsed.tanggal === todayStr) {
+                setItems(draftParsed.items);
+                setStep(draftParsed.step);
+                setIsLoading(false);
+                return; // Langsung keluar dari fungsi, pakai data draft
+            } else {
+                localStorage.removeItem(DRAFT_KEY); // Hapus draft basi kemarin
+            }
+        }
+
+        // JIKA TIDAK ADA DRAFT HARI INI, TETAP FETCH DARI DATABASE SEPERTI BIASA
+        const res = await fetch(MODAL_SENEN_URL);
+        const modalData = await res.json();
+        
+        const MENU_MM = [
+           { id: 'rendang', name: 'Rendang' }, { id: 'dendeng', name: 'Dendeng' }, { id: 'kikil', name: 'Kikil' },
+           { id: 'ayambakar', name: 'Ayam Bakar' }, { id: 'ayamgoreng', name: 'Ayam Goreng' }, { id: 'ayamgulai', name: 'Ayam Gulai' },
+           { id: 'ikanbawal-bakar', name: 'Ikan Bawal Bakar' }, { id: 'ikansalam-bakar', name: 'Ikan Salam Bakar' },
+           { id: 'ikansalam-goreng', name: 'Ikan Salam Goreng' }, { id: 'ikantongkol-goreng', name: 'Ikan Tongkol Goreng' },
+           { id: 'ikantongkol-gulaikuning', name: 'Ikan Tongkol Gulai Kuning' }, { id: 'ikantongkol-asampedas', name: 'Ikan Tongkol Asam Pedas' },
+           { id: 'lele-goreng', name: 'Lele Goreng' }, { id: 'telur-dadar', name: 'Telur Dadar' }, { id: 'telur-balado', name: 'Telur Balado' },
+           { id: 'ati-ampela', name: 'Ati Ampela' }, { id: 'perkedel', name: 'Perkedel' }
+        ];
+
+        const initialItems = MENU_MM.map(menu => {
+          const foundModal = modalData.find(m => m.itemId === menu.id);
+          return {
+            ...menu,
+            stokAwal: '',
+            hargaModal: foundModal ? new Intl.NumberFormat('id-ID').format(foundModal.hargaModal) : '',
+            sisaStok: ''
+          };
+        });
+        
+        setItems(initialItems);
+      } catch (error) {
+        alert("Gagal menarik data harga modal");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchModalPrices();
+  }, [DRAFT_KEY]);
+
+  // 2. AUTO-SAVE SETIAP ADA PERUBAHAN DATA (DI BELAKANG LAYAR)
+  useEffect(() => {
+     if (!isLoading && items.length > 0) {
+         const todayStr = new Date().toLocaleDateString('id-ID');
+         localStorage.setItem(DRAFT_KEY, JSON.stringify({
+             tanggal: todayStr,
+             step: step,
+             items: items
+         }));
+     }
+  }, [items, step, isLoading, DRAFT_KEY]);
+
+  const handleInputChange = (id, field, value) => {
+    const rawValue = value.replace(/\D/g, '');
+    
+    if (field === 'hargaModal') {
+       const formattedValue = rawValue ? new Intl.NumberFormat('id-ID').format(rawValue) : '';
+       setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: formattedValue } : item));
+    } else {
+       setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: rawValue } : item));
+    }
+  };
+
+  const handleNextToStep2 = () => {
+    const hasData = items.some(item => item.stokAwal !== '' && parseInt(item.stokAwal) > 0);
+    if (!hasData) {
+      alert("Isi minimal 1 stok item terlebih dahulu untuk hari ini bos!");
+      return;
+    }
+    setStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSubmitFinal = async () => {
+    if(!window.confirm("Data sudah benar? Laporan akan disubmit ke pusat.")) return;
+    setIsSubmitting(true);
+
+    try {
+      const validModalItems = items.map(item => ({
+        id: item.id, name: item.name, 
+        hargaModal: parseInt(item.hargaModal.replace(/\./g, '')) || 0
+      }));
+      
+      await fetch(MODAL_SENEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: validModalItems })
+      });
+
+      const activeItems = items.filter(item => item.stokAwal !== '' && parseInt(item.stokAwal) > 0);
+      let detailStringParts = [];
+      let totalLabaKotor = 0;
+
+      activeItems.forEach(item => {
+        const awal = parseInt(item.stokAwal) || 0;
+        const sisa = parseInt(item.sisaStok) || 0;
+        const laku = awal - sisa;
+        const modal = parseInt(item.hargaModal.replace(/\./g, '')) || 0;
+        const pendapatanItem = laku * modal; 
+
+        if (laku > 0) totalLabaKotor += pendapatanItem;
+
+        detailStringParts.push(`${item.name}: Awal ${awal}, Sisa ${sisa}, Laku ${laku}, Modal ${formatRupiah(modal)}`);
+      });
+
+      const todayStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+      const detailPayload = detailStringParts.join(' || ');
+
+      const payload = {
+        sheet: branchInfo.sheetName,
+        tanggal: todayStr,
+        cash: totalLabaKotor, 
+        bca: 0, gofood: 0,
+        jenisPengeluaran: `[LAPORAN SENEN] ${detailPayload}`,
+        totalPengeluaran: 0
+      };
+
+      await fetch(API_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      // SETELAH BERHASIL SUBMIT, HAPUS DRAFT DARI LOCAL STORAGE
+      localStorage.removeItem(DRAFT_KEY);
+
+      alert("✅ Laporan Hari Ini Berhasil Terkirim!");
+      onLogout(); 
+    } catch (error) {
+      alert("❌ Gagal mengirim data. Cek koneksi internet.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-gray-500">Memuat Data Database...</div>;
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-32">
+      {/* HEADER */}
+      <div className="bg-white p-6 sticky top-0 z-30 shadow-sm flex justify-between items-center border-b border-gray-200 transition-all">
+        <div>
+            <h1 className="text-2xl font-black text-gray-900 tracking-tight">{branchInfo.name}</h1>
+            <p className="text-[10px] sm:text-xs font-black text-blue-600 uppercase tracking-widest mt-1 flex items-center gap-1">
+               {step === 1 ? <><div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> TAHAP 1: INPUT PAGI</> : <><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> TAHAP 2: CLOSING SORE</>}
+            </p>
+        </div>
+        <button onClick={onLogout} className="p-3 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95"><LogOut size={20}/></button>
+      </div>
+
+      {/* BODY */}
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
+        
+        {/* BANNER UX SAAT BERADA DI TAHAP 2 (Sangat Komunikatif) */}
+        {step === 2 && (
+          <div className="bg-green-50 border-2 border-green-400 p-5 rounded-[1.5rem] mb-8 shadow-md animate-in slide-in-from-top-4">
+              <div className="flex items-center gap-3 mb-2">
+                 <div className="bg-green-500 text-white p-1.5 rounded-full"><CheckCircle2 size={20}/></div>
+                 <h2 className="text-lg font-black text-green-800 tracking-tight">Data Pagi Tersimpan Otomatis!</h2>
+              </div>
+              <p className="text-sm font-bold text-green-700 ml-11">
+                Anda aman untuk menutup Web/Browser ini sekarang. Buka lagi saat sudah waktunya tutup toko untuk menginput Sisa Stok Akhir.
+              </p>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="animate-in slide-in-from-left-8 duration-500 fade-in">
+            <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl mb-6 shadow-sm">
+                <p className="text-sm font-bold text-blue-800 flex items-center gap-2"><Info size={18} className="shrink-0"/> Input jumlah stok awal hari ini dan perbarui harga modal jika ada perubahan.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {items.map(item => (
+                <div key={item.id} className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-gray-200 hover:border-blue-300 transition-colors group">
+                  <h3 className="font-black text-gray-900 text-lg mb-4">{item.name}</h3>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Stok Pagi</label>
+                      <input 
+                         type="text" inputMode="numeric"
+                         className="w-full bg-gray-50 p-3.5 rounded-xl font-black text-center text-lg outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 border border-gray-200 transition-all text-gray-900" 
+                         placeholder="0"
+                         value={item.stokAwal}
+                         onChange={e => handleInputChange(item.id, 'stokAwal', e.target.value)}
+                      />
+                    </div>
+                    <div className="flex-[2]">
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Harga Modal (Rp)</label>
+                      <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Rp</span>
+                          <input 
+                             type="text" inputMode="numeric"
+                             className="w-full bg-gray-50 pl-10 pr-4 py-3.5 rounded-xl font-black text-lg outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 border border-gray-200 transition-all text-gray-900" 
+                             placeholder="10.000"
+                             value={item.hargaModal}
+                             onChange={e => handleInputChange(item.id, 'hargaModal', e.target.value)}
+                          />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="animate-in slide-in-from-right-8 duration-500 fade-in space-y-4">
+            {items.filter(i => i.stokAwal !== '' && parseInt(i.stokAwal) > 0).map(item => {
+              const awal = parseInt(item.stokAwal) || 0;
+              const sisa = parseInt(item.sisaStok) || 0;
+              const laku = awal - sisa;
+
+              return (
+                <div key={item.id} className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-5 hover:border-green-300 transition-colors">
+                  <div className="w-full sm:w-1/3">
+                    <h3 className="font-black text-gray-900 text-xl leading-tight">{item.name}</h3>
+                    <p className="text-xs font-bold text-gray-500 mt-2">Stok Pagi: <span className="text-gray-900 font-black bg-gray-100 px-2.5 py-1 rounded-lg ml-1">{awal}</span></p>
+                  </div>
+                  
+                  <div className="w-full sm:w-1/3 relative group">
+                      <label className="absolute -top-2.5 left-4 bg-white px-2 text-[10px] font-black text-red-500 uppercase tracking-widest z-10">Sisa Sore</label>
+                      <input 
+                         type="text" inputMode="numeric"
+                         className="w-full bg-red-50 p-4 rounded-xl font-black text-center text-2xl outline-none focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-50 border border-red-200 transition-all text-red-700" 
+                         placeholder="0"
+                         value={item.sisaStok}
+                         onChange={e => {
+                             const val = parseInt(e.target.value.replace(/\D/g, '')) || '';
+                             if (val > awal) { alert("Sisa stok lebih besar dari stok awal!"); return; }
+                             handleInputChange(item.id, 'sisaStok', e.target.value);
+                         }}
+                      />
+                  </div>
+
+                  <div className="w-full sm:w-1/3 sm:text-right bg-green-50 p-4 rounded-xl border border-green-200">
+                      <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Laku Terjual</p>
+                      <p className="text-3xl font-black text-green-700">{laku < 0 ? 0 : laku} <span className="text-sm font-bold opacity-70">Pcs</span></p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* STICKY FOOTER */}
+      <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-200 p-4 sm:p-6 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-40">
+         <div className="max-w-4xl mx-auto flex gap-4">
+             {step === 1 ? (
+                 <button onClick={handleNextToStep2} className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-lg shadow-xl active:scale-[0.98] transition-all flex justify-center items-center gap-3 border-b-4 border-blue-800">
+                     <Save size={24}/> SIMPAN DATA PAGI
+                 </button>
+             ) : (
+                 <>
+                    <button onClick={() => setStep(1)} disabled={isSubmitting} className="flex-1 py-5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl font-black shadow-sm active:scale-[0.98] transition-all flex justify-center items-center gap-2 disabled:opacity-50">
+                        <ArrowLeft size={20} className="hidden sm:block"/> KEMBALI
+                    </button>
+                    <button onClick={handleSubmitFinal} disabled={isSubmitting} className="flex-[2] py-5 bg-gray-900 hover:bg-black text-white rounded-2xl font-black text-lg shadow-xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 border-b-4 border-gray-950 disabled:opacity-50">
+                        {isSubmitting ? <Loader2 className="animate-spin" size={24}/> : <CheckCircle2 size={24}/>} 
+                        {isSubmitting ? 'MENYIMPAN...' : 'SELESAIKAN & SUBMIT LAPORAN'}
+                    </button>
+                 </>
+             )}
+         </div>
+      </div>
+    </div>
+  );
 }
