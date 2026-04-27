@@ -25,7 +25,7 @@ const BRANCH_CONFIG = {
   '3030': { id: 'mm3', name: 'Mutiara Minang - Sinpasa', brand: 'minang', sheetName: 'MM Sinpasa', bg: 'bg-red-50', color: 'text-red-600' },
   '1010': { id: 'plci1', name: 'Pecel Lele Cabe Ijo - Kantin SMB', brand: 'pecel', sheetName: 'PLCI Kantin SMB', bg: 'bg-green-50', color: 'text-green-600' },
   '1234': { id: 'pusat', name: 'Testing Pusat', brand: 'pecel', sheetName: 'Testing Pusat', bg: 'bg-green-50', color: 'text-green-600' },
-  '8080': { id: 'senen', name: 'Mutiara Minang - Pasar Senen', brand: 'minang', sheetName: 'MM Pasar Senen', bg: 'bg-blue-50', color: 'text-blue-600', isInputMode: true } // <-- INI BARU
+  '8080': { id: 'senen', name: 'Mutiara Minang - Aeon & Villa MG', brand: 'minang', sheetName: 'MM Aeon & Villa MG', bg: 'bg-blue-50', color: 'text-blue-600', isInputMode: true } // <-- INI BARU
 };
 
 // Konfigurasi PIN khusus akses Dapur masing-masing cabang
@@ -157,7 +157,7 @@ const formatRupiah = (number) => new Intl.NumberFormat('id-ID', { style: 'curren
     if (userRole === 'shared_expense') return <SharedExpenseView onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
     if (userRole === 'kitchen') return <KitchenView branchInfo={activeBranch} onLogout={() => setUserRole(null)} />;
     
-    // LOGIKA EMPLOYEE YANG BENAR (GABUNGAN KASIR BIASA & PASAR SENEN)
+    // LOGIKA EMPLOYEE YANG BENAR (GABUNGAN KASIR BIASA & Aeon & Villa MG)
     if (userRole === 'employee') {
       if (activeBranch?.isInputMode) {
         return <PasarSenenInputView branchInfo={activeBranch} onLogout={() => setUserRole(null)} formatRupiah={formatRupiah} />;
@@ -3596,8 +3596,8 @@ const filteredRawData = useMemo(() => {
      let data = rawData.filter(item => !(item.jenisPengeluaran && item.jenisPengeluaran.includes('[UNPAID]')));
      
      if (filterCabang === 'Semua') {
-         // KUNCI: Sembunyikan Pasar Senen dari view Global
-         return data.filter(item => item.sheet !== 'MM Pasar Senen');
+         // KUNCI: Sembunyikan Aeon & Villa MG dari view Global
+         return data.filter(item => item.sheet !== 'MM Aeon & Villa MG');
      }
      return data.filter(item => item.sheet === filterCabang);
   }, [rawData, filterCabang]);
@@ -4316,8 +4316,8 @@ const exportDailyPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16); doc.setFont("helvetica", "bold");
     
-    // CUSTOM TITLE KHUSUS PASAR SENEN
-    const titleStr = filterCabang === 'MM Pasar Senen' ? 'Laporan Harian: REKAP SETORAN STOK' : `Laporan Harian: ${tabType.toUpperCase()}`;
+    // CUSTOM TITLE KHUSUS Aeon & Villa MG
+    const titleStr = filterCabang === 'MM Aeon & Villa MG' ? 'Laporan Harian: REKAP SETORAN STOK' : `Laporan Harian: ${tabType.toUpperCase()}`;
     doc.text(titleStr, 14, 20);
     
     doc.setFontSize(10); doc.setFont("helvetica", "normal");
@@ -4326,8 +4326,8 @@ const exportDailyPDF = () => {
     doc.text(`Total Keseluruhan: ${formatRupiah(activeDayData.total)}`, 14, 40);
     
     doc.setFontSize(9);
-    // Sembunyikan detail metode pembayaran (Cash/BCA/QRIS) jika di Pasar Senen karena cuma 1 metode (Setoran)
-    if (filterCabang !== 'MM Pasar Senen') {
+    // Sembunyikan detail metode pembayaran (Cash/BCA/QRIS) jika di Aeon & Villa MG karena cuma 1 metode (Setoran)
+    if (filterCabang !== 'MM Aeon & Villa MG') {
         doc.text(`Detail -> CASH: ${formatRupiah(activeDayData.cash)}   |   BCA: ${formatRupiah(activeDayData.bca)}   |   QRIS: ${formatRupiah(activeDayData.qris)}`, 14, 46);
     }
 
@@ -4335,9 +4335,9 @@ const exportDailyPDF = () => {
     const tableRows = [];
 
     // ===============================================
-    // LOGIKA PDF KHUSUS CABANG PASAR SENEN
+    // LOGIKA PDF KHUSUS CABANG Aeon & Villa MG
     // ===============================================
-    if (filterCabang === 'MM Pasar Senen') {
+    if (filterCabang === 'MM Aeon & Villa MG') {
         tableColumn = ["Waktu", "Nama Item", "Stok Awal", "Sisa Stok", "Laku", "Hrg Modal", "Total (Rp)"];
         
         activeDayData.items.forEach(item => {
@@ -4585,7 +4585,7 @@ const exportDailyPDF = () => {
               <th className="p-5 font-bold">Status</th>
               
               {/* KONDISI TABEL HEADER BERDASARKAN CABANG */}
-              {filterCabang === 'MM Pasar Senen' ? (
+              {filterCabang === 'MM Aeon & Villa MG' ? (
                 <>
                   <th className="p-5 font-bold w-full">Detail Rekap Laporan Stok</th>
                   <th className={`p-5 font-bold text-center ${pinClassesActionAndTotal}`}>Total Setoran & Aksi</th>
@@ -4615,8 +4615,8 @@ const exportDailyPDF = () => {
               const rowClass = isSelected ? "bg-orange-50 hover:bg-orange-100 border-b border-orange-200" : (isDeleted ? "bg-red-50/50 hover:bg-red-50 border-b border-red-100" : "border-b border-gray-50 hover:bg-gray-50");
               const textClass = isDeleted ? "text-red-500 line-through opacity-70" : "text-gray-600";
               
-              // KONDISI TABEL BODY KHUSUS PASAR SENEN
-              if (filterCabang === 'MM Pasar Senen') {
+              // KONDISI TABEL BODY KHUSUS Aeon & Villa MG
+              if (filterCabang === 'MM Aeon & Villa MG') {
                  const rawItemsStr = (item.jenisPengeluaran || '').replace('[LAPORAN SENEN]', '').trim();
                  const detailItems = rawItemsStr.split(' || ').filter(i => i);
                  
